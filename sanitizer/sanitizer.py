@@ -18,7 +18,7 @@ client = OpenAI(
 # 3. Define the Sanitization Function
 def sanitize_prompt(raw_user_input):
     """
-    Uses Llama 3.1 405B to rewrite the input safely.
+    Uses Llama 3.3 70B to rewrite the input safely.
     """
     system_instruction = """
       You are a Security Sanitization Layer.
