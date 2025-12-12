@@ -4,7 +4,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers_interpret import SequenceClassificationExplainer
 
 class SecurityClassifier:
-    def __init__(self, model_path="./saved_security_model"):
+    def __init__(self, model_path="C:/My Files/Programming/CodeRed/saved_security_model"):
         """
         Initializes the model and the explainer engine.
         """
