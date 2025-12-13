@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Safety Gateway</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <span class="logo-icon">🛡️</span>
+                    <h1>Safety Gateway</h1>
+                </div>
+                <div class="header-actions">
+                    <button class="config-btn" onclick="toggleConfig()">
+                        <span>⚙️</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Welcome Section -->
+            <section class="welcome-section">
+                <h2 class="welcome-title">Secure Your AI Interactions</h2>
+                <p class="welcome-subtitle">Real-time prompt analysis with advanced security layers</p>
+            </section>
+
+            <!-- Input Section -->
+            <section class="input-section">
+                <div class="input-container">
+                    <textarea 
+                        id="promptInput" 
+                        placeholder="Enter your prompt here..."
+                        rows="3"
+                    ></textarea>
+                    <div class="input-actions">
+                        <select id="modeSelect">
+                            <option value="analyze">Analyze</option>
+                            <option value="gateway" selected>Full Gateway</option>
+                        </select>
+                        <button id="runBtn" onclick="runAnalysis()">
+                            <span class="btn-icon">→</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Config Panel -->
+            <section class="config-panel" id="configPanel">
+                <div class="config-content">
+                    <h3>Layer Weights</h3>
+                    <div class="weight-controls">
+                        <div class="weight-item">
+                            <label>Regex Analyzer</label>
+                            <input type="range" id="weightRegex" min="0" max="100" value="20" oninput="updateWeights()">
+                            <span class="weight-value" id="weightRegexValue">0.20</span>
+                        </div>
+                        <div class="weight-item">
+                            <label>Security Model</label>
+                            <input type="range" id="weightSecurity" min="0" max="100" value="35" oninput="updateWeights()">
+                            <span class="weight-value" id="weightSecurityValue">0.35</span>
+                        </div>
+                        <div class="weight-item">
+                            <label>Mutation Layer</label>
+                            <input type="range" id="weightMutation" min="0" max="100" value="30" oninput="updateWeights()">
+                            <span class="weight-value" id="weightMutationValue">0.30</span>
+                        </div>
+                        <div class="weight-item">
+                            <label>Bottleneck Extractor</label>
+                            <input type="range" id="weightBottleneck" min="0" max="100" value="15" oninput="updateWeights()">
+                            <span class="weight-value" id="weightBottleneckValue">0.15</span>
+                        </div>
+                    </div>
+                    <div class="weight-total">
+                        Total: <span id="weightTotal">1.00</span>
+                        <span id="weightWarning" class="weight-warning"></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Flowchart Section -->
+            <section class="flowchart-section">
+                <div class="flowchart-container">
+                    <!-- Input Node -->
+                    <div class="flow-node input-node" id="inputNode">
+                        <div class="node-content">
+                            <span class="node-icon">📝</span>
+                            <span class="node-label">INPUT</span>
+                        </div>
+                    </div>
+
+                    <!-- Connector -->
+                    <div class="flow-connector" id="connector1"></div>
+
+                    <!-- Analysis Layers -->
+                    <div class="layers-container">
+                        <div class="layer-node" id="regexLayer">
+                            <div class="layer-header">
+                                <span class="layer-icon">🔤</span>
+                                <span class="layer-name">Regex</span>
+                            </div>
+                            <div class="layer-metrics">
+                                <span class="score" id="regexScore">—</span>
+                                <span class="latency" id="regexLatency">—</span>
+                            </div>
+                        </div>
+
+                        <div class="layer-node" id="securityLayer">
+                            <div class="layer-header">
+                                <span class="layer-icon">🤖</span>
+                                <span class="layer-name">Security</span>
+                            </div>
+                            <div class="layer-metrics">
+                                <span class="score" id="securityScore">—</span>
+                                <span class="latency" id="securityLatency">—</span>
+                            </div>
+                        </div>
+
+                        <div class="layer-node" id="mutationLayer">
+                            <div class="layer-header">
+                                <span class="layer-icon">🧬</span>
+                                <span class="layer-name">Mutation</span>
+                            </div>
+                            <div class="layer-metrics">
+                                <span class="score" id="mutationScore">—</span>
+                                <span class="latency" id="mutationLatency">—</span>
+                            </div>
+                        </div>
+
+                        <div class="layer-node" id="bottleneckLayer">
+                            <div class="layer-header">
+                                <span class="layer-icon">🔬</span>
+                                <span class="layer-name">Bottleneck</span>
+                            </div>
+                            <div class="layer-metrics">
+                                <span class="score" id="bottleneckScore">—</span>
+                                <span class="latency" id="bottleneckLatency">—</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Connector -->
+                    <div class="flow-connector" id="connector2"></div>
+
+                    <!-- Decision Node -->
+                    <div class="flow-node decision-node" id="decisionNode">
+                        <div class="node-content">
+                            <span class="node-icon">⚖️</span>
+                            <span class="node-label">DECISION</span>
+                            <span class="decision-score" id="totalScore">—</span>
+                        </div>
+                    </div>
+
+                    <!-- Connector -->
+                    <div class="flow-connector" id="connector3"></div>
+
+                    <!-- Action Nodes -->
+                    <div class="actions-container">
+                        <div class="action-node pass" id="actionPass">
+                            <span class="action-icon">✓</span>
+                            <span class="action-label">PASS</span>
+                        </div>
+                        <div class="action-node sanitize" id="actionSanitize">
+                            <span class="action-icon">◆</span>
+                            <span class="action-label">SANITIZE</span>
+                        </div>
+                        <div class="action-node block" id="actionBlock">
+                            <span class="action-icon">✕</span>
+                            <span class="action-label">BLOCK</span>
+                        </div>
+                    </div>
+
+                    <!-- Sanitizer -->
+                    <div class="sanitizer-section" id="sanitizerSection">
+                        <div class="flow-connector" id="connector4"></div>
+                        <div class="flow-node sanitizer-node" id="sanitizerNode">
+                            <div class="node-content">
+                                <span class="node-icon">🧹</span>
+                                <span class="node-label">SANITIZER</span>
+                                <span class="sanitizer-latency" id="sanitizerLatency">—</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results -->
+            <section class="results-section" id="resultsSection">
+                <div class="results-header">
+                    <h3>Analysis Results</h3>
+                    <span class="total-latency" id="totalLatency">—</span>
+                </div>
+                <div class="results-content">
+                    <div class="result-item">
+                        <span class="result-label">Action</span>
+                        <span class="result-value" id="resultActionValue">—</span>
+                    </div>
+                    <div class="result-item">
+                        <span class="result-label">Risk Score</span>
+                        <span class="result-value" id="resultScoreValue">—</span>
+                    </div>
+                    <div class="result-item sanitized-output" id="sanitizedOutput">
+                        <span class="result-label">Sanitized Output</span>
+                        <div class="sanitized-text" id="sanitizedText">—</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

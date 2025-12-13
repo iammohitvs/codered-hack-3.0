@@ -7,12 +7,16 @@ whether to PASS, SANITIZE, or BLOCK prompts.
 """
 
 import asyncio
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 from enum import Enum
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 # Import all layer classes
@@ -30,10 +34,10 @@ from utils.sanitizer import PromptSanitizer
 class GatewayConfig:
     """Configuration for the safety gateway."""
     
-    # Layer Weights (must sum to 1.0)
+    # Layer Weights (must sum to 1.0) - These are defaults, can be overridden per request
     WEIGHT_REGEX = 0.20          # Fast keyword/pattern detection
     WEIGHT_SECURITY_MODEL = 0.35  # Trained classifier (most reliable)
-    WEIGHT_MUTATION = 0.3        # Adversarial robustness testing
+    WEIGHT_MUTATION = 0.30        # Adversarial robustness testing
     WEIGHT_BOTTLENECK = 0.15      # Semantic similarity to jailbreaks
     
     # Decision Thresholds
@@ -52,17 +56,27 @@ class Action(str, Enum):
 # PYDANTIC MODELS
 # =============================================================================
 
+class WeightsConfig(BaseModel):
+    """Custom weights configuration."""
+    regex_analyzer: float = GatewayConfig.WEIGHT_REGEX
+    security_model: float = GatewayConfig.WEIGHT_SECURITY_MODEL
+    mutation_layer: float = GatewayConfig.WEIGHT_MUTATION
+    bottleneck_extractor: float = GatewayConfig.WEIGHT_BOTTLENECK
+
+
 class PromptRequest(BaseModel):
     """Request model for prompt analysis."""
     prompt: str = Field(..., min_length=1, description="The prompt to analyze")
+    weights: Optional[WeightsConfig] = None  # Custom weights per request
 
 
 class LayerScore(BaseModel):
-    """Score from a single layer."""
+    """Score from a single layer with latency."""
     name: str
     score: float
     weight: float
     weighted_score: float
+    latency_ms: float
 
 
 class AnalysisResponse(BaseModel):
@@ -72,6 +86,8 @@ class AnalysisResponse(BaseModel):
     weighted_score: float
     layer_scores: list[LayerScore]
     sanitized_prompt: Optional[str] = None
+    total_latency_ms: float
+    sanitizer_latency_ms: Optional[float] = None
 
 
 class HealthResponse(BaseModel):
@@ -148,27 +164,47 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Add CORS middleware for frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount static files directory
+STATIC_DIR = Path(__file__).parent / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
 
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
-async def run_all_layers(prompt: str, app_state) -> list[LayerScore]:
+async def run_all_layers(prompt: str, app_state, weights: WeightsConfig) -> tuple[list[LayerScore], float]:
     """
-    Run all 4 detection layers in PARALLEL and return their scores.
+    Run all 4 detection layers in PARALLEL and return their scores with latencies.
+    Returns tuple of (layer_scores, total_parallel_latency_ms)
     """
     
     async def run_regex():
+        start = time.perf_counter()
         score = await app_state.regex_layer.get_score_async(prompt)
+        latency = (time.perf_counter() - start) * 1000
         return LayerScore(
             name="regex_analyzer",
             score=round(score, 4),
-            weight=GatewayConfig.WEIGHT_REGEX,
-            weighted_score=round(score * GatewayConfig.WEIGHT_REGEX, 4)
+            weight=weights.regex_analyzer,
+            weighted_score=round(score * weights.regex_analyzer, 4),
+            latency_ms=round(latency, 2)
         )
     
     async def run_security_model():
+        start = time.perf_counter()
         result = await app_state.security_model.get_score_async(prompt)
+        latency = (time.perf_counter() - start) * 1000
         # Convert to risk score: dangerous = confidence, safe = 1 - confidence
         if result['is_dangerous']:
             score = result['confidence']
@@ -177,37 +213,46 @@ async def run_all_layers(prompt: str, app_state) -> list[LayerScore]:
         return LayerScore(
             name="security_model",
             score=round(score, 4),
-            weight=GatewayConfig.WEIGHT_SECURITY_MODEL,
-            weighted_score=round(score * GatewayConfig.WEIGHT_SECURITY_MODEL, 4)
+            weight=weights.security_model,
+            weighted_score=round(score * weights.security_model, 4),
+            latency_ms=round(latency, 2)
         )
     
     async def run_mutation():
+        start = time.perf_counter()
         score = await app_state.mutation_layer.get_score_async(prompt)
+        latency = (time.perf_counter() - start) * 1000
         return LayerScore(
             name="mutation_layer",
             score=round(score, 4),
-            weight=GatewayConfig.WEIGHT_MUTATION,
-            weighted_score=round(score * GatewayConfig.WEIGHT_MUTATION, 4)
+            weight=weights.mutation_layer,
+            weighted_score=round(score * weights.mutation_layer, 4),
+            latency_ms=round(latency, 2)
         )
     
     async def run_bottleneck():
+        start = time.perf_counter()
         score = await app_state.bottleneck_layer.get_score_async(prompt)
+        latency = (time.perf_counter() - start) * 1000
         return LayerScore(
             name="bottleneck_extractor",
             score=round(score, 4),
-            weight=GatewayConfig.WEIGHT_BOTTLENECK,
-            weighted_score=round(score * GatewayConfig.WEIGHT_BOTTLENECK, 4)
+            weight=weights.bottleneck_extractor,
+            weighted_score=round(score * weights.bottleneck_extractor, 4),
+            latency_ms=round(latency, 2)
         )
     
-    # Run all layers in parallel
+    # Run all layers in parallel and time the whole operation
+    start_total = time.perf_counter()
     results = await asyncio.gather(
         run_regex(),
         run_security_model(),
         run_mutation(),
         run_bottleneck()
     )
+    total_latency = (time.perf_counter() - start_total) * 1000
     
-    return list(results)
+    return list(results), round(total_latency, 2)
 
 
 def determine_action(weighted_score: float) -> Action:
@@ -220,9 +265,25 @@ def determine_action(weighted_score: float) -> Action:
         return Action.BLOCK
 
 
+def get_weights(request_weights: Optional[WeightsConfig]) -> WeightsConfig:
+    """Get weights from request or use defaults."""
+    if request_weights:
+        return request_weights
+    return WeightsConfig()
+
+
 # =============================================================================
 # API ENDPOINTS
 # =============================================================================
+
+@app.get("/")
+async def serve_frontend():
+    """Serve the frontend HTML."""
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path))
+    return {"message": "Frontend not found. API is running at /docs"}
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -243,12 +304,13 @@ async def health_check():
 async def analyze_prompt(request: PromptRequest):
     """
     Analyze a prompt through all safety layers WITHOUT sanitizing.
-    Returns the action (pass/sanitize/block) and detailed scores.
+    Returns the action (pass/sanitize/block) and detailed scores with latencies.
     """
     prompt = request.prompt
+    weights = get_weights(request.weights)
     
     # Run all layers in parallel
-    layer_scores = await run_all_layers(prompt, app.state)
+    layer_scores, total_latency = await run_all_layers(prompt, app.state, weights)
     
     # Calculate weighted score
     weighted_score = sum(layer.weighted_score for layer in layer_scores)
@@ -261,7 +323,8 @@ async def analyze_prompt(request: PromptRequest):
         action=action,
         weighted_score=round(weighted_score, 4),
         layer_scores=layer_scores,
-        sanitized_prompt=None
+        sanitized_prompt=None,
+        total_latency_ms=total_latency
     )
 
 
@@ -276,9 +339,10 @@ async def gateway(request: PromptRequest):
     This is the main endpoint for protecting LLM applications.
     """
     prompt = request.prompt
+    weights = get_weights(request.weights)
     
     # Run all layers in parallel
-    layer_scores = await run_all_layers(prompt, app.state)
+    layer_scores, total_latency = await run_all_layers(prompt, app.state, weights)
     
     # Calculate weighted score
     weighted_score = sum(layer.weighted_score for layer in layer_scores)
@@ -288,10 +352,13 @@ async def gateway(request: PromptRequest):
     
     # Handle sanitization if needed
     sanitized_prompt = None
+    sanitizer_latency = None
     if action == Action.SANITIZE:
         if app.state.sanitizer_available:
             try:
+                start = time.perf_counter()
                 sanitized_prompt = await app.state.sanitizer.sanitize_async(prompt)
+                sanitizer_latency = round((time.perf_counter() - start) * 1000, 2)
             except Exception as e:
                 print(f"[!] Sanitization failed: {e}")
                 # Fall back to blocking if sanitization fails
@@ -305,7 +372,9 @@ async def gateway(request: PromptRequest):
         action=action,
         weighted_score=round(weighted_score, 4),
         layer_scores=layer_scores,
-        sanitized_prompt=sanitized_prompt
+        sanitized_prompt=sanitized_prompt,
+        total_latency_ms=total_latency + (sanitizer_latency or 0),
+        sanitizer_latency_ms=sanitizer_latency
     )
 
 
