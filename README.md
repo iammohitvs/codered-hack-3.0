@@ -4,7 +4,6 @@ A CPU-centric, lightweight, real-time safety gateway for LLM prompts. Analyzes i
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)
-![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
 ---
 
