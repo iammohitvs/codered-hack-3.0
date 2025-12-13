@@ -1,9 +1,15 @@
+"""
+Regex Analyzer Layer
+Keyword-based semantic analysis for detecting risky content.
+"""
+
 import sys
 import json
-import os
+import asyncio
 import argparse
 import re
 import unicodedata
+from pathlib import Path
 from typing import Dict, List, Tuple
 
 # Third-party libraries
@@ -116,24 +122,37 @@ DEFAULT_KEYWORDS: Dict[str, float] = {
 }
 
 class SemanticSanitizer:
-    def __init__(self, merge_file: str = None, replace_file: str = None):
-        if not hasattr(self, 'nlp'):
-            try:
-                # Disable parser/ner for speed, we only need tokenizer/lemmatizer
-                self.nlp = spacy.load("en_core_web_sm", disable=["parser", "ner"])
-            except OSError:
-                print("[!] Error: Model 'en_core_web_sm' not found. Run: python -m spacy download en_core_web_sm")
-                sys.exit(1)
+    """
+    Regex-based semantic analyzer for detecting risky keywords and patterns.
+    Uses NLP tokenization and fuzzy matching for robust detection.
+    """
+    
+    def __init__(self, merge_file: Path = None, replace_file: Path = None):
+        """
+        Initialize the semantic sanitizer.
+        
+        Args:
+            merge_file: JSON file path to merge with default keywords.
+            replace_file: JSON file path to replace default keywords entirely.
+        """
+        print("[*] Loading Regex Analyzer (SemanticSanitizer)...")
+        try:
+            # Disable parser/ner for speed, we only need tokenizer/lemmatizer
+            self.nlp = spacy.load("en_core_web_sm", disable=["parser", "ner"])
+        except OSError:
+            print("[!] Error: Model 'en_core_web_sm' not found. Run: python -m spacy download en_core_web_sm")
+            sys.exit(1)
             
         self.keywords = self._load_vocabulary(merge_file, replace_file)
+        print(f"[*] Regex Analyzer loaded with {len(self.keywords)} keywords.")
 
-    def _load_vocabulary(self, merge_file, replace_file) -> Dict[str, float]:
+    def _load_vocabulary(self, merge_file: Path, replace_file: Path) -> Dict[str, float]:
         keywords = {}
-        if replace_file and os.path.exists(replace_file):
+        if replace_file and Path(replace_file).exists():
             return self._read_json(replace_file)
 
         keywords = DEFAULT_KEYWORDS.copy()
-        if merge_file and os.path.exists(merge_file):
+        if merge_file and Path(merge_file).exists():
             keywords.update(self._read_json(merge_file))
         return keywords
 
@@ -223,6 +242,33 @@ class SemanticSanitizer:
                     total_score += weight
 
         return min(total_score, 1.0), sorted(list(triggered_words))
+
+    async def analyze_async(self, text: str) -> Tuple[float, List[str]]:
+        """
+        Async version of analyze for parallel execution.
+        
+        Args:
+            text: Input text to analyze.
+            
+        Returns:
+            Tuple of (score, triggered_words).
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.analyze, text)
+
+    async def get_score_async(self, text: str) -> float:
+        """
+        Simplified async interface that returns just the score.
+        
+        Args:
+            text: Input text to analyze.
+            
+        Returns:
+            Normalized risk score (0.0 - 1.0).
+        """
+        score, _ = await self.analyze_async(text)
+        return score
+
 
 def main():
     parser = argparse.ArgumentParser(description="AI Semantic Sanitizer")

@@ -1,33 +1,60 @@
+"""
+Security Model Layer
+Transformer-based classifier for detecting jailbreak/malicious prompts.
+"""
+
+import asyncio
+from pathlib import Path
 import torch
 import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from transformers_interpret import SequenceClassificationExplainer
 
+# Default model path relative to this file
+_DEFAULT_MODEL_PATH = Path(__file__).parent.parent / "models" / "saved_security_model"
+
+
 class SecurityClassifier:
-    def __init__(self, model_path="C:/My Files/Programming/CodeRed/saved_security_model"):
+    """
+    Transformer-based security classifier for prompt analysis.
+    Uses a fine-tuned model to detect jailbreak/malicious prompts.
+    """
+    
+    def __init__(self, model_path: Path = None):
         """
         Initializes the model and the explainer engine.
+        
+        Args:
+            model_path: Path to the saved model directory. Defaults to ./models/saved_security_model
         """
-        print(f"[*] Loading Security Model from {model_path}...")
+        self.model_path = Path(model_path) if model_path else _DEFAULT_MODEL_PATH
+        
+        print(f"[*] Loading Security Model from {self.model_path}...")
         try:
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
-            self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-            self.model = AutoModelForSequenceClassification.from_pretrained(model_path).to(self.device)
+            self.tokenizer = AutoTokenizer.from_pretrained(str(self.model_path))
+            self.model = AutoModelForSequenceClassification.from_pretrained(str(self.model_path)).to(self.device)
             
             # Initialize Explainer (compatible with binary classification)
             self.explainer = SequenceClassificationExplainer(
                 self.model,
                 self.tokenizer
             )
-            print(f"[*] Model loaded on {self.device}.")
+            print(f"[*] Security Model loaded on {self.device}.")
             
         except OSError:
-            print(f"[!] Error: Model not found at {model_path}. Did you run train.py?")
+            print(f"[!] Error: Model not found at {self.model_path}. Did you run train.py?")
             raise
 
-    def get_score(self, text):
+    def get_score(self, text: str) -> dict:
         """
         Fast pass: Returns just the Label and Confidence Score.
+        
+        Args:
+            text: Input text to analyze.
+            
+        Returns:
+            Dict with label, confidence, and is_dangerous flag.
         """
         inputs = self.tokenizer(text, return_tensors="pt", truncation=True, max_length=512).to(self.device)
         
@@ -51,7 +78,20 @@ class SecurityClassifier:
             "is_dangerous": (pred_index == 1) 
         }
 
-    def extract_bottleneck(self, text):
+    async def get_score_async(self, text: str) -> dict:
+        """
+        Async version of get_score for parallel execution.
+        
+        Args:
+            text: Input text to analyze.
+            
+        Returns:
+            Dict with label, confidence, and is_dangerous flag.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.get_score, text)
+
+    def extract_bottleneck(self, text: str) -> list:
         """
         The 'Hackathon Way' IB Extraction.
         Returns the specific words that drove the decision.
@@ -73,7 +113,7 @@ class SecurityClassifier:
                 
         return significant_words
 
-    def analyze(self, text):
+    def analyze(self, text: str) -> dict:
         """
         Full Pipeline: Scores the text AND extracts the dangerous trigger words.
         """
@@ -91,6 +131,7 @@ class SecurityClassifier:
             result['bottleneck_features'] = self.extract_bottleneck(text)
             
         return result
+
 
 # --- Quick Test Block ---
 if __name__ == "__main__":
