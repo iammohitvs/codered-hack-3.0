@@ -402,23 +402,9 @@ codered-hack-3.0/
 
 ---
 
-## License
-
-MIT License - See LICENSE file for details.
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
----
-
 ## Acknowledgments
 
 - Built for CodeRed Hackathon 3.0
 - Uses [SambaNova](https://sambanova.ai/) for LLM inference
 - Security model trained on public jailbreak datasets
+- Models, datasets, and other files used can be found here: https://drive.google.com/drive/folders/1I_PPnscwf_OYYY3b1cuC0HcTnpe9Xssx?usp=sharing
